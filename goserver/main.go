@@ -6,6 +6,7 @@ import (
 	"log"
 	"fmt"
 	"time"
+	"bufio"
 )
 
 const (
@@ -161,6 +162,40 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
     })
+
+	http.HandleFunc("/v1/completions/stream", func(w http.ResponseWriter, r *http.Request) {
+		var incoming IncomingRequest
+		json.NewDecoder(r.Body).Decode(&incoming)
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		// marshal incoming into JSON and POST 
+		data, err := json.Marshal(incoming)
+		if (err != nil){
+			return
+		}
+
+		resp, err := http.Post("http://localhost:8000/stream_complete", "application/json", bytes.NewReader(data))
+		if (err != nil){
+			return
+		}
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming not supported", http.StatusInternalServerError)
+			return
+		}
+
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := scanner.Text()
+			fmt.Fprintf(w, "%s\n", line)
+			flusher.Flush()
+		}
+
+	})
 
 	// start server
 	log.Fatal(http.ListenAndServe(":8080", nil))

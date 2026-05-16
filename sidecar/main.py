@@ -2,6 +2,12 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import pipeline
 import uvicorn
+from threading import Thread
+from fastapi.responses import StreamingResponse
+from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
+
+tokenizer = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+model = AutoModelForCausalLM.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
 
 app = FastAPI()
 pipe = pipeline("text-generation", model="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
@@ -41,6 +47,24 @@ def batch_complete(req: BatchCompletionRequest):
         completion = completion.split("\n")[0].strip()
         output.append(completion)
     return output
+
+@app.post("/stream_complete")
+def stream_complete(req: CompletionRequest):
+    inputs = tokenizer([req.prompt], return_tensors="pt")
+    streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+    generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=req.max_tokens)
+    thread = Thread(target=model.generate, kwargs=generation_kwargs)
+    thread.start()
+
+    def generate():
+        for token in streamer:
+            if token.strip():
+                yield f"data: {token}\n\n"
+            if "\n" in token:
+                break
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
