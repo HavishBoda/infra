@@ -7,6 +7,27 @@ import (
 	"fmt"
 	"time"
 	"bufio"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+var (
+    queueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
+        Name: "inference_queue_depth",
+        Help: "Number of requests currently in the queue",
+    })
+
+    requestLatency = prometheus.NewHistogram(prometheus.HistogramOpts{
+        Name:    "inference_request_latency_seconds",
+        Help:    "Request latency in seconds",
+        Buckets: prometheus.DefBuckets,
+    })
+
+    batchSize = prometheus.NewHistogram(prometheus.HistogramOpts{
+        Name:    "inference_batch_size",
+        Help:    "Number of requests per batch",
+        Buckets: []float64{1, 2, 4, 8},
+    })
 )
 
 const (
@@ -118,6 +139,7 @@ func Worker(queue chan Request) {
         }
 
         // send the batch here
+		batchSize.Observe(float64(len(batch)))  // prometheus
 		if (len(batch) == 1){
 			fmt.Println("Sending to sidecar, only 1 request\n")
 			res, err := SidecarClient(batch[0].Prompt, batch[0].MaxTokens)
@@ -143,6 +165,12 @@ func Worker(queue chan Request) {
 }
 
 func main() {
+	// prometheus tracking
+	prometheus.MustRegister(queueDepth)
+	prometheus.MustRegister(requestLatency)
+	prometheus.MustRegister(batchSize)
+	http.Handle("/metrics", promhttp.Handler())
+
 	fmt.Printf("Starting server...")
     queue := make(chan Request, 100)
 	// launch worker
@@ -152,13 +180,18 @@ func main() {
         var incoming IncomingRequest
 		json.NewDecoder(r.Body).Decode(&incoming)
 		resultChan := make(chan Result, 1)
+		start := time.Now()  // prometheus latency
+		queueDepth.Inc()
 		queue <- Request{Prompt: incoming.Prompt, MaxTokens: incoming.MaxTokens, ResultChan: resultChan}
 
+
 		result := <-resultChan
+		queueDepth.Dec()
 		if result.Err != nil {
 			http.Error(w, result.Err.Error(), http.StatusInternalServerError)
     		return
 		}
+		requestLatency.Observe(time.Since(start).Seconds())
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
     })
@@ -166,6 +199,7 @@ func main() {
 	http.HandleFunc("/v1/completions/stream", func(w http.ResponseWriter, r *http.Request) {
 		var incoming IncomingRequest
 		json.NewDecoder(r.Body).Decode(&incoming)
+		start := time.Now()  // prometheus latency
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -194,6 +228,7 @@ func main() {
 			fmt.Fprintf(w, "%s\n", line)
 			flusher.Flush()
 		}
+		requestLatency.Observe(time.Since(start).Seconds())
 
 	})
 
