@@ -5,19 +5,13 @@ services:
       - "8000:8000"
     volumes:
       - huggingface_cache:/root/.cache/huggingface
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   goserver:
     build: ./goserver
     ports:
       - "8080:8080"
     depends_on:
-      sidecar:
-        condition: service_healthy
+      - sidecar
     environment:
       - SIDECAR_URL=http://sidecar:8000
 
