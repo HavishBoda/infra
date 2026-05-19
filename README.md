@@ -1,6 +1,6 @@
 # Dispatch — Batched LLM Inference Server
 
-Infergo is a production-inspired LLM inference server built in Go with a Python sidecar. It implements dynamic request batching, SSE streaming, Prometheus observability, and a thread-safe request queue — the core architectural patterns behind real inference infrastructure at companies like Replicate, Modal, and Together.ai.
+Infergo is a production-inspired LLM inference server built in Go with a Python sidecar. It implements dynamic request batching, SSE streaming, Prometheus observability, and a thread-safe request queue.
 
 ---
 
