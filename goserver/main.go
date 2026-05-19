@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 	"bufio"
+	"os"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -34,6 +35,14 @@ const (
     maxBatchSize = 8
     maxWaitTime  = 20 * time.Millisecond
 )
+
+var sidecarURL = func() string {
+    url := os.Getenv("SIDECAR_URL")
+    if url == "" {
+        return "http://localhost:8000"
+    }
+    return url
+}()
 
 type CompletionRequest struct {
 	Prompt string `json:"prompt"`
@@ -73,7 +82,7 @@ func SidecarClient(prompt string, maxTokens int) (string, error) {
 		return "", err
 	}
 
-	resp, err := http.Post("http://localhost:8000/complete", "application/json", bytes.NewReader(data))
+	resp, err := http.Post(sidecarURL + "/complete", "application/json", bytes.NewReader(data))
 	if (err != nil){
 		return "", err
 	}
@@ -100,7 +109,7 @@ func BatchSidecarClient(requests []Request) ([]string, error) {
 		return nil, err
 	}
 
-	resp, err := http.Post("http://localhost:8000/batch_complete", "application/json", bytes.NewReader(data))
+	resp, err := http.Post(sidecarURL + "/batch_complete", "application/json", bytes.NewReader(data))
 	if (err != nil){
 		return nil, err
 	}
@@ -211,7 +220,7 @@ func main() {
 			return
 		}
 
-		resp, err := http.Post("http://localhost:8000/stream_complete", "application/json", bytes.NewReader(data))
+		resp, err := http.Post(sidecarURL + "/stream_complete", "application/json", bytes.NewReader(data))
 		if (err != nil){
 			return
 		}
